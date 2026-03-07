@@ -5,23 +5,41 @@
     "רמת גן - מזרח",
     "גבעתיים"
   ],
-  "webhookTarget": {
-    "url": "https://your-external-server.com/webhook-endpoint",
-    "template": {
-      "method": "POST",
-      "headers": {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer ${API_TOKEN}"
-      },
-      "body": {
-        "alert_type": "${alertKey}",
-        "location": "${city}",
-        "message": "${content}",
-        "timestamp": "${timestamp}",
-        "source": "oref-alerts"
+  "webhookTargets": [
+    {
+      "url": "https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK",
+      "citiesToMonitor": ["בני ברק", "תל אביב - מרכז העיר"],
+      "template": {
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "embeds": [{
+            "title": "🚨 התרעת פיקוד העורף",
+            "description": "${content}\n\n📍 **${city}**",
+            "timestamp": "${timestamp}",
+            "color": 15158332
+          }]
+        }
+      }
+    },
+    {
+      "url": "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage",
+      "citiesToMonitor": ["רמת גן - מזרח", "גבעתיים"],
+      "template": {
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "chat_id": "${TELEGRAM_CHAT_ID}",
+          "text": "🚨 *התרעת פיקוד העורף*\n\n${content}\n\n📍 **${city}**",
+          "parse_mode": "Markdown"
+        }
       }
     }
-  },
+  ],
   "monitoringIntervals": {
     "fetch_ms": 2000,
     "duplicateWindow_ms": 420000

@@ -9,12 +9,13 @@ This tool is designed for reliability and flexibility. It allows you to monitor 
 
 ## ✨ Key Features
 
-* **📍 Smart City Monitoring**: Define a list of cities/regions. The script uses flexible matching to catch alerts even if Pikud Ha'Oref slightly changes the area name, and fully supports "National" (ברחבי הארץ) alerts.
+* **🎯 Multi-Target Webhooks**: Send alerts to multiple endpoints simultaneously (Discord, Slack, Telegram, custom APIs). Each target can monitor different cities and use custom templates.
+* **📍 Smart City Monitoring**: Define a list of cities/regions. The script uses exact matching to catch alerts, and fully supports "National" (ברחבי הארץ) alerts.
 * **🛠️ Fully Customizable Webhook Templates**: Build your own JSON payload! Use a built-in interpolation engine to dynamically inject variables (`${city}`, `${timestamp}`, etc.) into the HTTP method, headers, and body.
 * **🔄 Dynamic Alert Fallback**: Never miss an alert. If an unknown alert type occurs (not defined in your config), the script automatically forwards the official description (`desc`) provided by the Home Front Command.
 * **⏱️ Smart Deduplication**: Prevents duplicate alerts *per city and alert type* within a configurable time window, ensuring you don't get spammed while not missing distinct events. Retains a 24-hour rolling history.
 * **🔐 Secure Secrets (.env)**: Keep your API tokens, Bearer auth, and Webhook URLs safe by injecting them directly from a `.env` file into your payload templates.
-* **⚡ Concurrent Dispatching**: Sends multiple webhooks simultaneously using `Promise.allSettled`, ensuring zero delays when a large barrage triggers multiple monitored cities at once.
+* **⚡ Concurrent Dispatching**: Sends multiple webhooks simultaneously using `Promise.allSettled`, ensuring zero delays when multiple targets need to be notified.
 
 ---
 
@@ -45,7 +46,19 @@ npm install axios dotenv
 Create a `.env` file in the root directory to store your sensitive data:
 
 ```env
+# Legacy fallback (optional - used if webhookTargets is empty)
 WEBHOOK_URL=https://your-external-server.com/webhook-endpoint
+
+# Discord webhook URL (embedded in config.json template)
+DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK
+
+# Telegram bot token (embedded in URL template)
+TELEGRAM_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTuVwXyZ
+
+# Telegram chat ID (group or user to send messages to)  
+TELEGRAM_CHAT_ID=-1001234567890
+
+# Generic API token for custom endpoints
 API_TOKEN=your_super_secret_token_here
 ```
 
@@ -59,23 +72,41 @@ Create a `config.json` file in the root directory and paste the following templa
     "רמת גן - מזרח",
     "גבעתיים"
   ],
-  "webhookTarget": {
-    "url": "https://your-external-server.com/webhook-endpoint",
-    "template": {
-      "method": "POST",
-      "headers": {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer ${API_TOKEN}"
-      },
-      "body": {
-        "alert_type": "${alertKey}",
-        "location": "${city}",
-        "message": "${content}",
-        "timestamp": "${timestamp}",
-        "source": "oref-alerts"
+  "webhookTargets": [
+    {
+      "url": "https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK",
+      "citiesToMonitor": ["בני ברק", "תל אביב - מרכז העיר"],
+      "template": {
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "embeds": [{
+            "title": "🚨 התרעת פיקוד העורף",
+            "description": "${content}\n\n📍 **${city}**",
+            "timestamp": "${timestamp}",
+            "color": 15158332
+          }]
+        }
+      }
+    },
+    {
+      "url": "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage",
+      "citiesToMonitor": ["רמת גן - מזרח", "גבעתיים"],
+      "template": {
+        "method": "POST", 
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "chat_id": "${TELEGRAM_CHAT_ID}",
+          "text": "🚨 *התרעת פיקוד העורף*\n\n${content}\n\n📍 **${city}**",
+          "parse_mode": "Markdown"
+        }
       }
     }
-  },
+  ],
   "monitoringIntervals": {
     "fetch_ms": 2000,
     "duplicateWindow_ms": 420000
@@ -97,9 +128,15 @@ Create a `config.json` file in the root directory and paste the following templa
 }
 ```
 
-### 4. Customizing Your Webhook Template
+### 4. Customizing Your Multi-Target Webhooks
 
-The `webhookTarget.template` object allows you to structure the outgoing request exactly how your destination server expects it.
+The `webhookTargets` array allows you to configure multiple webhook endpoints, each with its own cities and templates.
+
+**Key Features:**
+* **Per-target cities**: Each webhook can monitor different cities using `citiesToMonitor`
+* **Custom templates**: Each target can have completely different request format  
+* **Fallback cities**: If a target doesn't specify `citiesToMonitor`, it inherits from global config
+* **Multiple services**: Send to Discord, Slack, Telegram, and custom APIs simultaneously
 
 You can use the following dynamic variables anywhere in your headers or body:
 
@@ -107,9 +144,14 @@ You can use the following dynamic variables anywhere in your headers or body:
 * `${city}` - The specific monitored city that triggered the alert.
 * `${content}` - The custom message from your `alertMappings` (or the official Home Front Command fallback text).
 * `${timestamp}` - The current time in ISO 8601 format.
-* `${ANY_ENV_VAR}` - Any variable defined in your `.env` file (like `${API_TOKEN}`).
+* `${ANY_ENV_VAR}` - Any variable defined in your `.env` file (like `${TELEGRAM_TOKEN}`).
 
-*(Note: If you omit the `template` object, the script will fall back to a simple default POST payload: `{ alertKey, city, content }`)*
+**Example Use Cases:**
+- Discord webhook for family notifications (specific cities only)
+- Telegram bot for emergency services (all monitored cities)
+- Custom API for home automation systems (specific regions)
+
+*(Note: If you omit the `template` object in a target, it will use a simple default POST payload: `{ alertKey, city, content }`)*
 
 ---
 

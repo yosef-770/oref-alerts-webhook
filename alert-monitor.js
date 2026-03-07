@@ -2,8 +2,8 @@
  * alert-monitor.js
  * ----------------
  * Monitors Pikud Ha'Oref real-time feed.
- * Features: Smart deduplication, dynamic fallback to 'desc',
- * concurrent webhooks, 24h history retention, and fully customizable webhook templates.
+ * Features: Smart deduplication, target-specific city overrides,
+ * concurrent webhooks to MULTIPLE targets, 24h history retention, and customizable templates.
  */
 
 require("dotenv").config();
@@ -15,7 +15,6 @@ const config = require('./config.json');
 
 const FETCH_URL = "https://www.oref.org.il/WarningMessages/alert/Alerts.json";
 const HIST_FILE = path.join(__dirname, "Historical_realtime.json");
-const WEBHOOK_URL = process.env.WEBHOOK_URL || config.webhookTarget.url; 
 const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getTimestamp() {
@@ -46,16 +45,12 @@ async function saveHistory(history) {
 }
 
 // --- TEMPLATE INTERPOLATION ENGINE ---
-/**
- * Recursively traverses an object/array and replaces placeholders like ${key}
- * with actual values from the 'vars' object or from process.env.
- */
 function interpolateObject(obj, vars) {
   if (typeof obj === 'string') {
     return obj.replace(/\${(.*?)}/g, (match, key) => {
       if (vars[key] !== undefined) return vars[key];
       if (process.env[key] !== undefined) return process.env[key];
-      return match; // Leave as is if no replacement found
+      return match; 
     });
   } else if (Array.isArray(obj)) {
     return obj.map(item => interpolateObject(item, vars));
@@ -69,10 +64,9 @@ function interpolateObject(obj, vars) {
   return obj;
 }
 
-function sendWebhook(alertKey, city, messageContent) {
-  const template = config.webhookTarget.template;
+function sendWebhook(targetConfig, alertKey, city, messageContent) {
+  const template = targetConfig.template;
   
-  // Define the dynamic variables available for injection
   const dynamicVars = {
     alertKey: alertKey,
     city: city,
@@ -80,7 +74,8 @@ function sendWebhook(alertKey, city, messageContent) {
     timestamp: new Date().toISOString()
   };
 
-  // If the user defined a template in config.json, use it. Otherwise, fallback to the old default structure.
+  const targetUrl = interpolateObject(targetConfig.url, dynamicVars);
+
   if (template) {
     const method = template.method || "POST";
     const headers = interpolateObject(template.headers || {}, dynamicVars);
@@ -88,15 +83,14 @@ function sendWebhook(alertKey, city, messageContent) {
 
     return axios({
       method: method,
-      url: WEBHOOK_URL,
+      url: targetUrl,
       headers: headers,
       data: data,
       timeout: 5000
     });
   } else {
-    // Fallback if no template is found in config
     const payload = { alertKey, city, content: messageContent };
-    return axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 5000 });
+    return axios.post(targetUrl, payload, { headers: { "Content-Type": "application/json" }, timeout: 5000 });
   }
 }
 
@@ -147,12 +141,21 @@ class Feed {
 }
 
 (async () => {
-  if (!WEBHOOK_URL || !WEBHOOK_URL.startsWith('http')) {
-    error("Error: Please specify a valid webhook URL in config.json or .env.");
+  if (!config.webhookTargets || !Array.isArray(config.webhookTargets) || config.webhookTargets.length === 0) {
+    error("Error: `webhookTargets` in config.json must be a non-empty array.");
     return;
   }
-  if (!config.citiesToMonitor || !Array.isArray(config.citiesToMonitor) || config.citiesToMonitor.length === 0) {
-    error("Error: `citiesToMonitor` in config.json must be a non-empty array.");
+
+  const masterCitiesSet = new Set(config.citiesToMonitor || []);
+  for (const target of config.webhookTargets) {
+    if (target.citiesToMonitor && Array.isArray(target.citiesToMonitor)) {
+      target.citiesToMonitor.forEach(city => masterCitiesSet.add(city));
+    }
+  }
+  const masterCitiesList = Array.from(masterCitiesSet);
+
+  if (masterCitiesList.length === 0) {
+    error("Error: No monitored cities defined in global config or target configs.");
     return;
   }
 
@@ -160,8 +163,8 @@ class Feed {
   let history = await loadHistory();
   await feed.refreshCookies();
 
-  log(`Starting alert monitor for cities: "${config.citiesToMonitor.join(', ')}"`);
-  log(`Webhooks will be sent to: ${WEBHOOK_URL}`);
+  log(`Starting alert monitor for ${masterCitiesList.length} unique cities.`);
+  log(`Monitoring ${config.webhookTargets.length} webhook targets.`);
 
   setInterval(async () => {
     try {
@@ -175,7 +178,7 @@ class Feed {
 
       const matchingCities = alert.data.filter(alertCity => {
         if (alertCity === "ברחבי הארץ") return true;
-        return config.citiesToMonitor.includes(alertCity);
+        return masterCitiesList.includes(alertCity);
       });
 
       if (matchingCities.length === 0) return; 
@@ -211,15 +214,28 @@ class Feed {
       });
       await saveHistory(history);
 
-      const webhookPromises = citiesToAlert.map(city => sendWebhook(alert.title, city, messageContent));
+      const webhookPromises = [];
+      const taskDetails = [];
+
+      for (const city of citiesToAlert) {
+        for (const target of config.webhookTargets) {
+          const allowedCitiesForTarget = target.citiesToMonitor || config.citiesToMonitor || [];
+          
+          if (city === "ברחבי הארץ" || allowedCitiesForTarget.includes(city)) {
+            webhookPromises.push(sendWebhook(target, alert.title, city, messageContent));
+            taskDetails.push({ city, url: target.url });
+          }
+        }
+      }
+      
       const results = await Promise.allSettled(webhookPromises);
       
       results.forEach((r, i) => {
-        const city = citiesToAlert[i];
+        const { city, url } = taskDetails[i];
         if (r.status === "rejected") {
-          error(`❌ Webhook POST failed for ${city}:`, r.reason?.message);
+          error(`❌ Webhook POST failed for ${city} to ${url}:`, r.reason?.message);
         } else {
-          log(`✅ Webhook sent successfully for "${alert.title}" in ${city}.`);
+          log(`✅ Webhook sent successfully for "${alert.title}" in ${city} to ${url}.`);
         }
       });
 
