@@ -1,11 +1,9 @@
 /**
- * alert-monitor.js (Updated Version)
+ * alert-monitor.js
  * ----------------
- * Monitors the real-time Pikud Ha'Oref feed (Alerts.json).
- * Includes best practices: Concurrent requests, pre-save history, 
- * flexible city matching, and timestamped logging.
- *
- * Requires: npm i axios dotenv
+ * Monitors Pikud Ha'Oref real-time feed.
+ * Features: Smart deduplication per city/title, dynamic fallback to 'desc',
+ * concurrent webhooks, and 24h history retention.
  */
 
 require("dotenv").config();
@@ -15,13 +13,11 @@ const { existsSync } = require("fs");
 const path = require("path");
 const config = require('./config.json');
 
-// --- CONFIGURATION ---
 const FETCH_URL = "https://www.oref.org.il/WarningMessages/alert/Alerts.json";
 const HIST_FILE = path.join(__dirname, "Historical_realtime.json");
-// Prefer .env, fallback to config.json
 const WEBHOOK_URL = process.env.WEBHOOK_URL || config.webhookTarget.url; 
+const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// --- LOGGING HELPERS ---
 function getTimestamp() {
   return `[${new Date().toLocaleString('he-IL', { 
     timeZone: 'Asia/Jerusalem',
@@ -34,7 +30,6 @@ const log = (message, ...args) => console.log(getTimestamp(), message, ...args);
 const warn = (message, ...args) => console.warn(getTimestamp(), message, ...args);
 const error = (message, ...args) => console.error(getTimestamp(), message, ...args);
 
-// --- HISTORY HELPERS ---
 async function loadHistory() {
   if (!existsSync(HIST_FILE)) await fs.writeFile(HIST_FILE, "[]", "utf8");
   try {
@@ -50,10 +45,6 @@ async function saveHistory(history) {
   await fs.writeFile(HIST_FILE, JSON.stringify(history, null, 2), "utf8");
 }
 
-/**
- * Returns a Promise for sending a generic webhook.
- * We return the Promise here so we can use Promise.allSettled later.
- */
 function sendWebhook(alertKey, city, messageContent) {
   const payload = {
     alertKey: alertKey,
@@ -64,7 +55,6 @@ function sendWebhook(alertKey, city, messageContent) {
   return axios.post(WEBHOOK_URL, payload, { headers, timeout: 5000 });
 }
 
-// --- ADVANCED FEED CLASS ---
 class Feed {
   constructor() {
     this.headers = {
@@ -111,7 +101,6 @@ class Feed {
   }
 }
 
-// --- MAIN LOOP ---
 (async () => {
   if (!WEBHOOK_URL || !WEBHOOK_URL.startsWith('http')) {
     error("Error: Please specify a valid webhook URL in config.json or .env.");
@@ -139,13 +128,6 @@ class Feed {
       
       log(`[!] Alert received: ${alert.title} in [${alert.data.join(", ")}]`);
 
-      const mapping = config.alertMappings.find(m => m.key === alert.title);
-      if (!mapping) {
-        log(`[-] Alert title "${alert.title}" not found in alertMappings. Skipping.`);
-        return;
-      }
-
-      // [IMPROVEMENT 1 & 3]: Flexible match + National alerts
       const matchingCities = alert.data.filter(alertCity => {
         if (alertCity === "ברחבי הארץ") return true;
         return config.citiesToMonitor.some(monitoredCity => 
@@ -153,30 +135,46 @@ class Feed {
         );
       });
 
-      if (matchingCities.length === 0) {
-        return; 
-      }
+      if (matchingCities.length === 0) return; 
 
-      // [TODO: Will be updated in the next step to include city deduplication]
       const now = Date.now();
-      if (history.some(h => h.alertTitle === alert.title && now - new Date(h.date).getTime() <= config.monitoringIntervals.duplicateWindow_ms)) {
-        log(`[-] Duplicate alert detected for "${alert.title}". Skipping.`);
+      const dupWindow = config.monitoringIntervals.duplicateWindow_ms;
+
+      // Retain 24 hours of history
+      history = history.filter(h => now - new Date(h.date).getTime() <= HISTORY_RETENTION_MS);
+
+      // Deduplication check: 15 minutes window per city & title
+      const citiesToAlert = matchingCities.filter(city => {
+        const alreadyAlerted = history.some(h => 
+          h.alertTitle === alert.title && 
+          h.cities.includes(city) &&
+          (now - new Date(h.date).getTime() <= dupWindow) 
+        );
+        return !alreadyAlerted;
+      });
+
+      if (citiesToAlert.length === 0) {
+        log(`[-] Duplicate alert detected for all matching cities for "${alert.title}". Skipping.`);
         return;
       }
 
-      log(`[+] Found match for cities: ${matchingCities.join(", ")}`);
+      log(`[+] Found new match for cities: ${citiesToAlert.join(", ")}`);
 
-      // [IMPROVEMENT 2]: Update history BEFORE sending webhooks
-      history.push({ alertTitle: alert.title, date: new Date().toISOString() });
+      const mapping = config.alertMappings.find(m => m.key === alert.title);
+      const messageContent = mapping ? mapping.message : (alert.desc || "התקבלה התרעה, יש לפעול על פי הנחיות פיקוד העורף.");
+
+      history.push({ 
+        alertTitle: alert.title, 
+        cities: citiesToAlert, 
+        date: new Date().toISOString() 
+      });
       await saveHistory(history);
 
-      // [IMPROVEMENT 4]: Concurrent requests using Promise.allSettled
-      const webhookPromises = matchingCities.map(city => sendWebhook(alert.title, city, mapping.message));
-      
+      const webhookPromises = citiesToAlert.map(city => sendWebhook(alert.title, city, messageContent));
       const results = await Promise.allSettled(webhookPromises);
       
       results.forEach((r, i) => {
-        const city = matchingCities[i];
+        const city = citiesToAlert[i];
         if (r.status === "rejected") {
           error(`❌ Webhook POST failed for ${city}:`, r.reason?.message);
         } else {
