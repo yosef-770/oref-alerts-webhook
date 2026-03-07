@@ -205,7 +205,7 @@ class Feed {
       log(`[+] Found new match for cities: ${citiesToAlert.join(", ")}`);
 
       const mapping = config.alertMappings.find(m => m.key === alert.title);
-      const messageContent = mapping ? mapping.message : (alert.desc || "התקבלה התרעה, יש לפעול על פי הנחיות פיקוד העורף.");
+      const rawMessageContent = mapping ? mapping.message : (alert.desc || "התקבלה התרעה, יש לפעול על פי הנחיות פיקוד העורף.");
 
       history.push({ 
         alertTitle: alert.title, 
@@ -217,12 +217,15 @@ class Feed {
       const webhookPromises = [];
       const taskDetails = [];
 
+      // 3. Route specific cities to specific targets
       for (const city of citiesToAlert) {
+                const personalizedMessage = interpolateObject(rawMessageContent, { city: city, alertKey: alert.title });
+
         for (const target of config.webhookTargets) {
           const allowedCitiesForTarget = target.citiesToMonitor || config.citiesToMonitor || [];
           
           if (city === "ברחבי הארץ" || allowedCitiesForTarget.includes(city)) {
-            webhookPromises.push(sendWebhook(target, alert.title, city, messageContent));
+            webhookPromises.push(sendWebhook(target, alert.title, city, personalizedMessage));
             taskDetails.push({ city, url: target.url });
           }
         }
