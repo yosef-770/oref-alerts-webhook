@@ -175,9 +175,7 @@ class Feed {
 
       const matchingCities = alert.data.filter(alertCity => {
         if (alertCity === "ברחבי הארץ") return true;
-        return config.citiesToMonitor.some(monitoredCity => 
-          alertCity.includes(monitoredCity) || monitoredCity.includes(alertCity)
-        );
+        return config.citiesToMonitor.includes(alertCity);
       });
 
       if (matchingCities.length === 0) return; 
