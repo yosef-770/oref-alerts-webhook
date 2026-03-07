@@ -2,8 +2,8 @@
  * alert-monitor.js
  * ----------------
  * Monitors Pikud Ha'Oref real-time feed.
- * Features: Smart deduplication per city/title, dynamic fallback to 'desc',
- * concurrent webhooks, and 24h history retention.
+ * Features: Smart deduplication, dynamic fallback to 'desc',
+ * concurrent webhooks, 24h history retention, and fully customizable webhook templates.
  */
 
 require("dotenv").config();
@@ -45,14 +45,59 @@ async function saveHistory(history) {
   await fs.writeFile(HIST_FILE, JSON.stringify(history, null, 2), "utf8");
 }
 
+// --- TEMPLATE INTERPOLATION ENGINE ---
+/**
+ * Recursively traverses an object/array and replaces placeholders like ${key}
+ * with actual values from the 'vars' object or from process.env.
+ */
+function interpolateObject(obj, vars) {
+  if (typeof obj === 'string') {
+    return obj.replace(/\${(.*?)}/g, (match, key) => {
+      if (vars[key] !== undefined) return vars[key];
+      if (process.env[key] !== undefined) return process.env[key];
+      return match; // Leave as is if no replacement found
+    });
+  } else if (Array.isArray(obj)) {
+    return obj.map(item => interpolateObject(item, vars));
+  } else if (obj !== null && typeof obj === 'object') {
+    const newObj = {};
+    for (const [k, v] of Object.entries(obj)) {
+      newObj[k] = interpolateObject(v, vars);
+    }
+    return newObj;
+  }
+  return obj;
+}
+
 function sendWebhook(alertKey, city, messageContent) {
-  const payload = {
+  const template = config.webhookTarget.template;
+  
+  // Define the dynamic variables available for injection
+  const dynamicVars = {
     alertKey: alertKey,
     city: city,
     content: messageContent,
+    timestamp: new Date().toISOString()
   };
-  const headers = { "Content-Type": "application/json" };
-  return axios.post(WEBHOOK_URL, payload, { headers, timeout: 5000 });
+
+  // If the user defined a template in config.json, use it. Otherwise, fallback to the old default structure.
+  if (template) {
+    const method = template.method || "POST";
+    const headers = interpolateObject(template.headers || {}, dynamicVars);
+    const data = interpolateObject(template.body || {}, dynamicVars);
+
+    return axios({
+      method: method,
+      url: WEBHOOK_URL,
+      headers: headers,
+      data: data,
+      timeout: 5000
+    });
+  } else {
+    // Fallback if no template is found in config
+    const payload = { alertKey, city, content: messageContent };
+    return axios.post(WEBHOOK_URL, payload, { headers: { "Content-Type": "application/json" }, timeout: 5000 });
+  }
 }
 
 class Feed {
@@ -140,10 +185,8 @@ class Feed {
       const now = Date.now();
       const dupWindow = config.monitoringIntervals.duplicateWindow_ms;
 
-      // Retain 24 hours of history
       history = history.filter(h => now - new Date(h.date).getTime() <= HISTORY_RETENTION_MS);
 
-      // Deduplication check: 15 minutes window per city & title
       const citiesToAlert = matchingCities.filter(city => {
         const alreadyAlerted = history.some(h => 
           h.alertTitle === alert.title && 
