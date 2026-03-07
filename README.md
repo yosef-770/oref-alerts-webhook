@@ -77,8 +77,7 @@ Create a `config.json` file in the root directory and paste the following templa
   },
   "monitoringIntervals": {
     "fetch_ms": 2000,
-    "newAlertWindow_ms": 180000,
-    "duplicateWindow_ms": 900000
+    "duplicateWindow_ms": 420000
   },
   "alertMappings": [
     {
