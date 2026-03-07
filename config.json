@@ -7,7 +7,7 @@
   ],
   "webhookTargets": [
     {
-      "url": "https://discord.com/api/webhooks/YOUR_DISCORD_WEBHOOK",
+      "url": "${DISCORD_WEBHOOK}",
       "citiesToMonitor": ["בני ברק", "תל אביב - מרכז העיר"],
       "template": {
         "method": "POST",
