@@ -60,6 +60,7 @@ Create a `config.json` file in the root directory and paste the following templa
     "גבעתיים"
   ],
   "webhookTarget": {
+    "url": "https://your-external-server.com/webhook-endpoint",
     "template": {
       "method": "POST",
       "headers": {
