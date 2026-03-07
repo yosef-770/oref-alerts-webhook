@@ -144,9 +144,3 @@ The code is designed to parse the current JSON structure provided by the Home Fr
 ## 🤝 Contributing
 
 Suggestions, bug reports, and pull requests are welcome! Please feel free to open an issue if you encounter any problems or have ideas for improvements.
-
------
-
-## 🤝 Contributing
-
-Suggestions, bug reports, and pull requests are welcome\! Please feel free to open an issue if you encounter any problems or have ideas for improvements.
