@@ -17,7 +17,7 @@
         "body": {
           "embeds": [{
             "title": "🚨 התרעת פיקוד העורף",
-            "description": "${content}\n\n📍 **${city}**",
+            "description": "${content}",
             "timestamp": "${timestamp}",
             "color": 15158332
           }]
@@ -34,7 +34,7 @@
         },
         "body": {
           "chat_id": "${TELEGRAM_CHAT_ID}",
-          "text": "🚨 *התרעת פיקוד העורף*\n\n${content}\n\n📍 **${city}**",
+          "text": "${content}",
           "parse_mode": "Markdown"
         }
       }

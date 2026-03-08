@@ -62,7 +62,13 @@ TELEGRAM_CHAT_ID=-1001234567890
 API_TOKEN=your_super_secret_token_here
 ```
 
-Create a `config.json` file in the root directory and paste the following template:
+Copy the example configuration file and customize it:
+
+```bash
+cp config.example.json config.json
+```
+
+Then edit `config.json` to match your needs. Here's what the template contains:
 
 ```json
 {
@@ -84,7 +90,7 @@ Create a `config.json` file in the root directory and paste the following templa
         "body": {
           "embeds": [{
             "title": "🚨 התרעת פיקוד העורף",
-            "description": "${content}\n\n📍 **${city}**",
+            "description": "${content}",
             "timestamp": "${timestamp}",
             "color": 15158332
           }]
@@ -101,7 +107,7 @@ Create a `config.json` file in the root directory and paste the following templa
         },
         "body": {
           "chat_id": "${TELEGRAM_CHAT_ID}",
-          "text": "🚨 *התרעת פיקוד העורף*\n\n${content}\n\n📍 **${city}**",
+          "text": "${content}",
           "parse_mode": "Markdown"
         }
       }
@@ -113,16 +119,28 @@ Create a `config.json` file in the root directory and paste the following templa
   },
   "alertMappings": [
     {
+      "key": "בדקות הקרובות צפויות להתקבל התרעות באזורך",
+      "message": "🚀 *זוהה שיגור לעבר ישראל*\n*ייתכן ותשמע התראת צבע אדום ב${city} בדקות הקרובות*"
+    },
+    {
       "key": "חדירת כלי טיס עוין",
-      "message": "🛫 *חדירת כלי טיס עוין*"
+      "message": "🛫 *חדירת כלי טיס עוין ב${city}*"
     },
     {
       "key": "ירי רקטות וטילים",
-      "message": "🚨 *צבע אדום*"
+      "message": "🚨 *צבע אדום ב${city}*"
     },
     {
       "key": "שהייה בסמיכות למרחב מוגן",
-      "message": "📡 *זוהתה פעילות המעידה על כוונה לשיגורים לעבר ישראל* \nיש להיערך להתראות אפשריות בזמן הקרוב"
+      "message": "📡 *זוהתה פעילות המעידה על כוונה לשיגורים לעבר ישראל*\nיש להיערך להתראות אפשריות ב${city} בזמן הקרוב"
+    },
+    {
+      "key": "ירי רקטות וטילים -  האירוע הסתיים",
+      "message": "ℹ️ *סיום התראה ב${city}*\nלא מזוהה איום של שיגורים נוספים בטווח הזמן המיידי."
+    },
+    {
+      "key": "האירוע הסתיים",
+      "message": "ℹ️ *סיום התראה ב${city}*\nהשוהים במרחב המוגן יכולים לצאת. בעת קבלת הנחיה או התרעה, יש לפעול בהתאם להנחיות פיקוד העורף."
     }
   ]
 }
