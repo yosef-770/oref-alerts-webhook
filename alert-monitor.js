@@ -205,7 +205,9 @@ class Feed {
       log(`[+] Found new match for cities: ${citiesToAlert.join(", ")}`);
 
       const mapping = config.alertMappings.find(m => m.key === alert.title);
-      const rawMessageContent = mapping ? mapping.message : (alert.desc || "התקבלה התרעה, יש לפעול על פי הנחיות פיקוד העורף.");
+      const rawMessageContent = mapping
+        ? mapping.message
+        : `${alert.title} \${city}\n${alert.desc || config.defaultAlertMessage || ""}`;
 
       history.push({ 
         alertTitle: alert.title, 

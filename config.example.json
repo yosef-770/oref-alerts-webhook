@@ -44,6 +44,7 @@
     "fetch_ms": 2000,
     "duplicateWindow_ms": 420000
   },
+  "defaultAlertMessage": "התקבלה התרעה, יש לפעול על פי הנחיות פיקוד העורף.",
   "alertMappings": [
     {
       "key": "בדקות הקרובות צפויות להתקבל התרעות באזורך",
